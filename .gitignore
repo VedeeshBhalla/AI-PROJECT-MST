@@ -5,3 +5,4 @@ venv/
 outputs/
 .pytest_cache/
 submission/build/
+submission/.chart-data-*/
