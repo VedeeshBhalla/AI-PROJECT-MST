@@ -1,377 +1,95 @@
-# 🗺️ Step-by-Step Guide
-## Amazon Supply Chain Intelligence — ML Pipeline
-### Models: Logistic Regression | Random Forest
+# Running and presenting the ML experiment
 
----
+## 1. Prepare the environment
 
-## ✅ Prerequisites
+Use Python 3.11+ and install the pinned dependencies in `requirements.txt` in a virtual environment. The tested interpreter is Python 3.14.2 on Windows. Run:
 
-| Requirement | Version |
-|-------------|---------|
-| Python | 3.9 or higher |
-| pip | latest |
-| RAM | ≥ 8 GB recommended |
-
----
-
-## 📦 Step 0 — Install Dependencies
-
-```bash
-pip install -r requirements.txt
+```powershell
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
 ```
 
-**What gets installed:**
+## 2. Audit and reserve the holdout
 
-| Library | Purpose |
-|---------|---------|
-| `pandas` / `numpy` | Data loading and manipulation |
-| `scikit-learn` | Logistic Regression, Random Forest, metrics, CV |
-| `imbalanced-learn` | SMOTE over-sampling |
-| `matplotlib` / `seaborn` | All 10 visualisation charts |
-| `joblib` | Saving and loading model `.pkl` files |
-| `scipy` | Statistical utilities |
-
-> Note: `xgboost` and `lightgbm` are **NOT** required —
-> this project uses only Logistic Regression and Random Forest.
-
----
-
-## 📂 Step 0b — Place Your Dataset
-
-```bash
-mkdir -p data
-cp /path/to/dynamic_supply_chain_logistics_dataset.csv data/
-```
-
-> If your column names differ, open `config.py` and update
-> `TARGET_COL` and `NUMERIC_COLS` before running anything.
-
----
-
-## 🔍 Step 1 — EDA & Preprocessing
-
-```bash
+```powershell
 python step1_eda_preprocessing.py
 ```
 
-### What happens:
+The script validates the CSV, checks labels, removes exact duplicates, rejects repeated operational inputs, and reserves a seed-42 stratified 80/20 split before learning any transformation. It writes raw partitions to `outputs/data_split.pkl`, an audit to `outputs/reports/data_audit.json`, and training-only EDA. The audit includes a dataset hash and a count of labels reproduced by the excluded disruption-score threshold rule. Whole-dataset integrity checks are separate from training feature exploration.
 
-**1. Load & inspect**
-Reads the CSV, prints shape, dtypes, missing value counts, duplicate rows.
-Drops `timestamp` (detected as ID-like — unique per row, no predictive value).
+## 3. Inspect feature engineering
 
-**2. Auto-detect column types**
-Your dataset has 24 numeric feature columns and 1 string target
-(`risk_classification`). No categorical features to encode.
-
-**3. Target distribution chart**
-Bar + pie chart showing the split between On-Time / At Risk / Delayed.
-Reveals the severe imbalance (23k vs 3k vs 5k) that SMOTE will fix.
-Saved → `plots/01_target_distribution.png`
-
-**4. Numeric distributions**
-Histograms and boxplots for every feature — spot skewed columns
-(like `shipping_costs`, `historical_demand`) and outliers in GPS data.
-Saved → `plots/02_numeric_distributions.png`
-
-**5. Correlation heatmap**
-Shows which of the 24 features correlate with each other.
-High correlation pairs (e.g. `delay_probability` & `disruption_likelihood_score`)
-may be redundant but are kept since tree models handle this fine.
-Saved → `plots/03_correlation_heatmap.png`
-
-**6. Impute missing values**
-Numeric → filled with **median** (robust to outlier influence).
-No categorical columns to impute in your dataset.
-
-**7. Clip outliers (3×IQR)**
-GPS latitude/longitude and sensor readings can have extreme values.
-3×IQR fence clips only genuine statistical extremes, not legitimate
-large values like long shipment routes.
-
-**8. Encode target label**
-`risk_classification` string values → integers (0, 1, 2) via LabelEncoder.
-Mapping saved to `label_encoder.pkl` for decoding predictions later.
-
-**9. Standard scale all numeric features**
-Each of the 24 columns → zero mean, unit variance.
-Critical for Logistic Regression convergence.
-Harmless for Random Forest but keeps the pipeline consistent.
-
-**Output files created:**
-```
-outputs/preprocessed_data.csv
-outputs/models/scaler.pkl
-outputs/models/label_encoder.pkl
-outputs/models/num_imputer.pkl
-outputs/models/feature_cols.pkl
-```
-
----
-
-## 🔧 Step 2 — Feature Engineering
-
-```bash
+```powershell
 python step2_feature_engineering.py
 ```
 
-### What happens:
+Read `outputs/reports/feature_schema.json`. There are 18 raw inputs plus seven engineered features. A training-only preview documents names. It is never used as a precomputed matrix for cross-validation. Fold-local transforms are fitted independently during training.
 
-**1. Interaction features**
-Multiplies or divides pairs of columns that together carry more signal
-than either alone. Examples using your real column names:
+## 4. Train and select
 
-| Feature | Formula | What it captures |
-|---------|---------|-----------------|
-| `feat_delay_x_eta` | delay_probability × eta_variation_hours | Combined delay + timing risk |
-| `feat_disruption_x_route` | disruption_likelihood × route_risk_level | Compound route hazard |
-| `feat_traffic_x_eta` | traffic_congestion × eta_variation | Traffic-driven delay pressure |
-| `feat_driver_fatigue` | driver_behavior × fatigue_score | Human reliability signal |
-| `feat_port_x_customs` | port_congestion × customs_clearance | Border delay risk |
-| `feat_inventory_ratio` | warehouse_inventory ÷ historical_demand | Stock adequacy ratio |
-
-**2. Polynomial features**
-Squares (x²) and square roots (√x) of the top 6 risk-driver columns.
-Allows Logistic Regression to model non-linear patterns it otherwise can't.
-
-**3. Composite Risk Score**
-A single engineered column averaging all risk signals:
-- Positive contributors: delay_probability, disruption_likelihood,
-  route_risk_level, traffic_congestion, weather_severity, port_congestion
-- Negative contributors (inverted): driver_behavior_score,
-  supplier_reliability_score, handling_equipment_availability
-
-This is typically one of the top 3 most important features for Random Forest.
-
-**4. Log transforms**
-Applied to `shipping_costs`, `historical_demand`, `lead_time_days`
-to compress right-skewed distributions.
-
-**5. Feature-target correlation chart**
-All features ranked by absolute Pearson correlation with the target label.
-Red = engineered, blue = original.
-Saved → `plots/04_feature_correlation_ranking.png`
-
-**Output files:**
-```
-outputs/engineered_data.csv
-outputs/models/all_feature_cols.pkl
-```
-
----
-
-## 🤖 Step 3 — Model Training
-
-```bash
+```powershell
 python step3_train_models.py
 ```
 
-> ⏱️ Expected time: **3–10 minutes** depending on hardware.
+Each candidate receives the same five stratified folds. Imputation, clipping, scaling and SMOTE are fitted within the training side of each fold. SMOTE never sees validation/holdout rows. The majority-class baseline does not use SMOTE. Macro F1 weights the three classes equally and selects the winner. Accuracy and balanced accuracy are also recorded, with per-fold values and sample standard deviations. Parameters are fixed, with no tuning claim.
 
-### What happens:
+The scripts save full pipelines that accept raw named columns. There is no separate manually applied inference scaler. The holdout is not evaluated during selection. A majority baseline may legitimately win if operational measurements provide insufficient useful signal.
 
-**1. Load data + train/test split**
-Stratified 80/20 split. Stratified = each class is proportionally
-represented in both halves. Test set is locked away immediately.
+## 5. Evaluate once the model choices are frozen
 
-**2. SMOTE — balance the training set**
-
-Your raw class counts:
-```
-On-Time  : 23,944  (very dominant)
-Delayed  :  5,011
-At Risk  :  3,110  (minority — model would ignore this without SMOTE)
-```
-
-After SMOTE:
-```
-On-Time  : 19,155
-Delayed  : 19,155
-At Risk  : 19,155  ← synthetic samples created by interpolating
-                      between real At-Risk neighbours in feature space
-```
-
-**3. Logistic Regression training**
-
-```
-Algorithm : Linear decision boundary in 50-dimensional feature space
-Solver    : lbfgs (efficient for multi-class)
-max_iter  : 3000 (ensures convergence on 57k SMOTE samples)
-C         : 1.0  (regularisation — prevents overfitting)
-Strategy  : 5-fold stratified cross-validation → refit on full SMOTE set
-Output    : cv_accuracy ± std, test_accuracy
-```
-
-Why use it: Fast baseline that tells you the minimum bar Random Forest
-must beat. Its coefficients also reveal which features drive each class
-linearly — useful for explainability.
-
-**4. Random Forest training + tuning**
-
-```
-Algorithm  : 500 independent decision trees, majority vote
-Tuning     : RandomizedSearchCV — 20 random hyperparameter combinations
-             each evaluated with 5-fold stratified CV
-Search space:
-  n_estimators      : [300, 500, 700]      ← number of trees
-  max_depth         : [None, 15, 25, 35]   ← tree depth limit
-  min_samples_split : [2, 4, 6]            ← split threshold
-  min_samples_leaf  : [1, 2, 4]            ← leaf size limit
-  max_features      : ["sqrt", "log2"]     ← features per split
-
-class_weight = "balanced"  ← additional imbalance handling on top of SMOTE
-```
-
-Why use it: Each tree sees a random subset of data and features, making
-the ensemble much more robust than any single tree. The majority vote
-across 500 trees smooths out individual errors.
-
-**5. Best model selection**
-Both models' test accuracies are compared. The winner is saved as
-`best_model.pkl` — this is what Step 4 uses for detailed analysis.
-
-**Comparison table printed to terminal:**
-```
-┌──────────────────────────┬──────────────────┬──────────────────┐
-│ Metric                   │ Logistic Reg.    │ Random Forest    │
-├──────────────────────────┼──────────────────┼──────────────────┤
-│ CV Accuracy              │ 0.XXXX           │ 0.XXXX           │
-│ Test Accuracy            │ 0.XXXX           │ 0.XXXX           │
-│ Train Time               │  XX.Xs           │  XX.Xs           │
-│ Best Model?              │   NO             │ ✅ YES            │
-└──────────────────────────┴──────────────────┴──────────────────┘
-```
-
-**Output files:**
-```
-outputs/models/Logistic_Regression.pkl
-outputs/models/Random_Forest.pkl
-outputs/models/best_model.pkl
-outputs/models/best_model_name.pkl
-outputs/models/test_split.pkl
-outputs/models/final_feature_cols.pkl
-outputs/reports/model_comparison.csv
-outputs/plots/05_model_comparison.png
-```
-
----
-
-## 📊 Step 4 — Evaluation & Report
-
-```bash
+```powershell
 python step4_evaluate_report.py
 ```
 
-### What happens:
+Review:
 
-**1. Load both models + test set**
-Both Logistic Regression and Random Forest are loaded and evaluated
-on the identical held-out test set for a fair comparison.
+- `cross_validation.csv` and `cv_folds.csv` for training-only validation.
+- `model_comparison.csv` for holdout metrics, including the baseline.
+- `classification_reports.json` for each class's precision, recall, F1 and support.
+- `final_evaluation_report.txt` for the complete report and limitations.
+- `run_metadata.json` for actual package versions, parameters and selection criterion.
+- The seven PNGs in `outputs/plots/` for EDA, model comparison and evaluation.
 
-**2. Metrics computed for each model**
+This step does not replace the CV-selected winner using holdout results. If you redesign the experiment after inspecting the holdout, disclose that reuse and obtain a fresh final evaluation set before making unbiased final-performance claims.
 
-| Metric | What it measures |
-|--------|-----------------|
-| Accuracy | % of all predictions correct |
-| Macro F1 | F1 averaged equally across all 3 classes — penalises ignoring minority classes |
-| Weighted F1 | F1 weighted by class frequency |
-| ROC-AUC (OvR) | Discrimination ability at all thresholds — closer to 1.0 = better |
+The checked-in `results/` snapshot is exploratory: this holdout was inspected during repository repair before the final source-based removal of actual-arrival ETA variation and on-time fulfillment status. The pipeline still uses training-only selection. Do not describe this snapshot as an independent external evaluation.
 
-**3. Side-by-side metrics chart**
-4 metrics plotted as grouped bars — LR vs RF for each.
-Saved → `plots/05_model_comparison.png`
+To run all steps in the correct order:
 
-**4. Dual confusion matrices**
-Both models shown in a 2×2 grid — raw counts and normalised.
-You can directly compare where each model makes mistakes.
-Saved → `plots/06_confusion_matrix.png`
-
-**5. ROC Curves (both models, one chart)**
-Logistic Regression = dashed lines, Random Forest = solid lines.
-3 curves per model (one per class), each with its AUC value.
-Saved → `plots/07_roc_curves.png`
-
-**6. Precision-Recall Curves (both models)**
-More informative than ROC for the imbalanced classes.
-Saved → `plots/08_precision_recall_curves.png`
-
-**7. Feature Importance comparison**
-- **Random Forest**: Gini importance scores (how much each feature
-  reduces impurity across all 500 trees)
-- **Logistic Regression**: Mean absolute coefficients across 3 classes
-  (how strongly each feature pushes predictions toward each class)
-Both shown side-by-side with engineered features highlighted in red.
-Saved → `plots/09_feature_importances.png`
-
-**8. Prediction confidence histograms**
-Shows how confident each model is in its predictions.
-Random Forest tends to be better calibrated; Logistic Regression
-can be overconfident on linearly-separable regions.
-Saved → `plots/10_confidence_distribution.png`
-
-**9. Full text report**
-Everything above written to `reports/final_evaluation_report.txt`
-including the head-to-head comparison table with a winner indicator.
-
----
-
-## 🚀 All-in-One (Recommended)
-
-```bash
+```powershell
 python main_pipeline.py
 ```
 
-Runs Steps 1 → 4 automatically. Estimated total time: 5–15 minutes.
+## 6. Demonstrate raw-data inference
 
----
-
-## 🔧 Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| `KeyError: 'risk_classification'` | Check `TARGET_COL` in `config.py` matches exactly |
-| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
-| SMOTE error: too few samples | Change `k_neighbors=5` to `k_neighbors=3` in step3 |
-| Logistic Regression not converging | Increase `max_iter=3000` to `max_iter=5000` |
-| Memory error | Reduce `n_iter=20` to `n_iter=10` in RandomizedSearchCV |
-| Step 4 KeyError on model file | Make sure Step 3 ran fully (check `outputs/models/` folder) |
-
----
-
-## 📈 Expected Terminal Output (Step 4 finale)
-
-```
-════════════════════════════════════════════════════════════
-  LOGISTIC REGRESSION
-  🎯 Accuracy : XX.XX%
-  🎯 Macro F1 : 0.XXXX
-  🎯 ROC-AUC  : 0.XXXX
-
-  RANDOM FOREST
-  🎯 Accuracy : XX.XX%
-  🎯 Macro F1 : 0.XXXX
-  🎯 ROC-AUC  : 0.XXXX
-
-  🏆 Best Model : Random_Forest
-════════════════════════════════════════════════════════════
-
-✔ STEP 4 COMPLETE — PROJECT FINISHED ✅
+```powershell
+python predict.py new_shipments.csv --output outputs/predictions.csv
 ```
 
----
+Provide the 18 columns listed in `config.NUMERIC_COLS`; labels and excluded columns are not needed. Preserve the input row order when joining predictions back to shipments. Results are risk labels, not evidence that a delivery was late. Model probabilities have not been calibrated to real-world prevalence.
 
-## 🧠 Why These Two Models?
+## 7. Complete the submission
 
-| Property | Logistic Regression | Random Forest |
-|----------|--------------------|--------------| 
-| Type | Linear | Non-linear (ensemble) |
-| Interpretability | High — coefficients show direction | Medium — importance scores |
-| Speed | Very fast (~seconds) | Moderate (~minutes) |
-| Handles non-linearity | ❌ No | ✅ Yes |
-| Handles feature interactions | ❌ No | ✅ Yes (automatically) |
-| Expected accuracy on this data | Lower (~75–85%) | Higher (~85–94%) |
-| Best for | Baseline + explainability | Production predictions |
+Before handing this in:
 
-Random Forest almost always wins on this type of high-dimensional
-numeric data with non-linear risk relationships. Logistic Regression
-provides the baseline and interpretability layer.
+- Cite the verified Kaggle source and CC0 metadata in `DATASET.md`. Explain that source authenticity, original acquisition date, real/synthetic status, measurement timing and label-generation code remain unverified; do not invent these details.
+- Explain the exact disruption-score/label relationship and why that score and its derivatives are excluded. Explain the exclusions of undocumented prediction/risk scores, actual delivery outcome, actual-arrival ETA variation and on-time fulfillment status.
+- Define the operational prediction checkpoint and confirm that every input is available then. Avoid a pre-shipment claim without this evidence.
+- Include actual CV and holdout results, the baseline, per-class recall, confusion matrices and limitations. Use the actual High/Low/Moderate Risk names.
+- Explain why a random stratified split was used and why future forecasting would need chronological validation and potentially grouping by shipment/vehicle.
+- Add your own analysis and a conclusion that matches the measured results. If the models do not beat the baseline, discuss that finding honestly.
+- Include the code, dependency pins, generated report/figures, and any notebook, presentation, originality statement or other material required by your institution. This repository alone cannot establish compliance with an unspecified rubric.
+
+## Troubleshooting
+
+| Problem | Action |
+| --- | --- |
+| Missing operational columns | Match the CSV schema to the explicit allowlist; do not auto-include every numeric column. |
+| Invalid/missing labels | Supply only the three documented target classes and resolve missing targets. |
+| Repeated operational inputs | Investigate duplicate records or conflicting targets before splitting. |
+| Missing output/model artifacts | Rerun `python main_pipeline.py`; individual steps depend on earlier steps. |
+| Dependency import errors | Recreate the virtual environment with the pinned requirements and a supported Python version. |
+| Poor scores | Compare with baseline and per-class metrics; investigate source/label quality without adding label proxies. |
+| Resource constraints | Reduce forest tree count before the final experiment; retain the validation protocol and document the changed parameters. |
+
+No Amazon affiliation or production readiness is implied by this project.

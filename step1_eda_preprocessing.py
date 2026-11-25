@@ -1,258 +1,64 @@
-"""
-step1_eda_preprocessing.py
-===========================
-STEP 1 — Exploratory Data Analysis & Preprocessing
-
-What this script does:
-  • Loads raw dataset and prints shape / dtypes
-  • Auto-detects categorical vs numeric columns
-  • Visualises target class distribution (bar + pie)
-  • Plots histograms & boxplots for every numeric feature
-  • Draws a feature correlation heatmap
-  • Imputes missing values (median for numerics, mode for categoricals)
-  • Clips outliers using 3×IQR fence
-  • One-Hot encodes all categorical columns
-  • Standard-scales all numeric columns
-  • Saves preprocessed_data.csv + fitted scaler/imputer artefacts
-"""
-
-import os
-import warnings
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+"""Audit raw data and reserve a stratified holdout before fitting transforms."""
+import hashlib
+import json
 import joblib
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
 
 import config
+from ml_pipeline import load_dataset
 
-warnings.filterwarnings("ignore")
-sns.set_theme(style="whitegrid", palette="husl")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. LOAD DATA
-# ─────────────────────────────────────────────────────────────────────────────
-print("\n" + "=" * 60)
-print("  STEP 1 — EDA & PREPROCESSING")
-print("=" * 60)
-
-df = pd.read_csv(config.DATA_PATH)
-print(f"\n✔ Dataset loaded  →  {df.shape[0]:,} rows  ×  {df.shape[1]} columns")
-print(f"\nColumns:\n  {df.columns.tolist()}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. BASIC INFO
-# ─────────────────────────────────────────────────────────────────────────────
-print("\n── Data Types ──────────────────────────────────────────────")
-print(df.dtypes)
-
-print("\n── Missing Values ──────────────────────────────────────────")
-missing = df.isnull().sum()
-missing_cols = missing[missing > 0]
-if len(missing_cols):
-    print(missing_cols)
-else:
-    print("  None found ✔")
-
-print("\n── Duplicate Rows ──────────────────────────────────────────")
-n_dup = df.duplicated().sum()
-print(f"  {n_dup} duplicates found", "→ dropping" if n_dup else "✔")
-if n_dup:
-    df.drop_duplicates(inplace=True)
-    df.reset_index(drop=True, inplace=True)
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. AUTO-DETECT COLUMN TYPES
-# ─────────────────────────────────────────────────────────────────────────────
-# Drop ID-like columns (unique string per row)
-drop_cols = [
-    c for c in df.columns
-    if df[c].dtype == object
-    and df[c].nunique() == df.shape[0]
-    and c != config.TARGET_COL
-]
-if drop_cols:
-    print(f"\n  Dropping ID-like columns: {drop_cols}")
-    df.drop(columns=drop_cols, inplace=True)
-
-cat_cols = [
-    c for c in df.columns
-    if df[c].dtype == object and c != config.TARGET_COL
-]
-num_cols = [
-    c for c in df.columns
-    if df[c].dtype != object and c != config.TARGET_COL
-]
-
-print(f"\n  Categorical cols ({len(cat_cols)}): {cat_cols}")
-print(f"  Numeric cols     ({len(num_cols)}): {num_cols}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. TARGET DISTRIBUTION
-# ─────────────────────────────────────────────────────────────────────────────
-print("\n── Target Distribution ─────────────────────────────────────")
-vc = df[config.TARGET_COL].value_counts()
-print(vc)
-print(f"\n  Class imbalance ratio (max/min): {vc.max()/vc.min():.2f}x")
-
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-
-vc.plot(
-    kind="bar", ax=axes[0],
-    color=["#2ecc71", "#f39c12", "#e74c3c"],
-    edgecolor="black", width=0.55,
-)
-axes[0].set_title("Target Class Distribution", fontsize=14, fontweight="bold")
-axes[0].set_xlabel("Delivery Status")
-axes[0].set_ylabel("Count")
-axes[0].tick_params(axis="x", rotation=0)
-for bar in axes[0].patches:
-    axes[0].text(
-        bar.get_x() + bar.get_width() / 2,
-        bar.get_height() + 5,
-        f"{int(bar.get_height()):,}",
-        ha="center", va="bottom", fontsize=10,
+def main():
+    config.ensure_output_dirs()
+    df = load_dataset()
+    train, test = train_test_split(
+        df, test_size=config.TEST_SIZE, random_state=config.RANDOM_STATE,
+        stratify=df[config.TARGET_COL],
     )
-
-vc.plot(
-    kind="pie", ax=axes[1],
-    autopct="%1.1f%%",
-    colors=["#2ecc71", "#f39c12", "#e74c3c"],
-    startangle=90, pctdistance=0.8,
-)
-axes[1].set_title("Target Class Share", fontsize=14, fontweight="bold")
-axes[1].set_ylabel("")
-
-plt.suptitle("Delivery Status — Class Distribution", fontsize=15,
-             fontweight="bold", y=1.02)
-plt.tight_layout()
-plt.savefig(os.path.join(config.PLOT_DIR, "01_target_distribution.png"),
-            dpi=150, bbox_inches="tight")
-plt.close()
-print("  Plot saved → 01_target_distribution.png")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. NUMERIC DISTRIBUTIONS
-# ─────────────────────────────────────────────────────────────────────────────
-if num_cols:
-    n = len(num_cols)
-    fig, axes = plt.subplots(2, n, figsize=(5 * n, 9))
-    if n == 1:
-        axes = np.array(axes).reshape(2, 1)
-
-    for i, col in enumerate(num_cols):
-        data = df[col].dropna()
-
-        # Histogram
-        axes[0, i].hist(data, bins=40, color="#3498db",
-                        edgecolor="white", alpha=0.85)
-        axes[0, i].set_title(f"{col}\n(Histogram)", fontsize=10)
-        axes[0, i].set_ylabel("Frequency")
-
-        # Boxplot
-        axes[1, i].boxplot(
-            data, vert=True, patch_artist=True,
-            boxprops=dict(facecolor="#3498db", alpha=0.7),
-            medianprops=dict(color="red", linewidth=2),
-        )
-        axes[1, i].set_title(f"{col}\n(Boxplot)", fontsize=10)
-
-    plt.suptitle("Numeric Feature Distributions", fontsize=14,
-                 fontweight="bold")
+    if train[config.TARGET_COL].value_counts().min() < config.CV_FOLDS * 4:
+        raise ValueError("Insufficient training examples per class for CV with SMOTE.")
+    joblib.dump({
+        "X_train": train[config.NUMERIC_COLS], "y_train": train[config.TARGET_COL],
+        "X_test": test[config.NUMERIC_COLS], "y_test": test[config.TARGET_COL],
+        "train_rows": train.index.to_list(), "test_rows": test.index.to_list(),
+    }, config.OUTPUT_DIR / "data_split.pkl")
+    audit = {
+        "dataset_sha256": hashlib.sha256(config.DATA_PATH.read_bytes()).hexdigest(),
+        "rows_after_deduplication": len(df), "columns": df.columns.to_list(),
+        "class_counts": df[config.TARGET_COL].value_counts().to_dict(),
+        "missing_counts": df.isna().sum().to_dict(),
+        "operational_features": config.NUMERIC_COLS, "excluded_features": config.EXCLUDED_COLS,
+        "train_rows": len(train), "test_rows": len(test),
+        "split": "stratified random holdout; evaluates same-distribution classification, not future forecasting",
+        "test_fraction": config.TEST_SIZE,
+        "timestamp_range": [str(df.timestamp.min()), str(df.timestamp.max())] if "timestamp" in df else None,
+        "dataset_source": "https://www.kaggle.com/datasets/datasetengineer/logistics-and-supply-chain-dataset",
+        "source_creator": "DatasetEngineer",
+        "source_license": "CC0: Public Domain (Kaggle metadata)",
+        "source_verified_date": "2026-11-25",
+        "verified_source_sha256": "3b90b86fb658823687e461f6444dc10bbde325ea1c37733da92b0dad7071b10e",
+    }
+    if "disruption_likelihood_score" in df:
+        rule = df.disruption_likelihood_score.map(
+            lambda v: "Low Risk" if v < 0.3 else "Moderate Risk" if v < 0.7 else "High Risk")
+        audit["disruption_rule_matching_rows"] = int((rule == df[config.TARGET_COL]).sum())
+    (config.REPORT_DIR / "data_audit.json").write_text(json.dumps(audit, indent=2), encoding="utf-8")
+    # Development EDA uses training observations only.
+    train[config.NUMERIC_COLS].describe().to_csv(config.REPORT_DIR / "training_summary.csv")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    train[config.TARGET_COL].value_counts().plot.bar(title="Training class distribution")
+    plt.ylabel("Rows")
     plt.tight_layout()
-    plt.savefig(os.path.join(config.PLOT_DIR, "02_numeric_distributions.png"),
-                dpi=150, bbox_inches="tight")
+    plt.savefig(config.PLOT_DIR / "01_training_distribution.png", dpi=150)
     plt.close()
-    print("  Plot saved → 02_numeric_distributions.png")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 6. CORRELATION HEATMAP
-# ─────────────────────────────────────────────────────────────────────────────
-if len(num_cols) > 1:
-    plt.figure(figsize=(max(8, len(num_cols)), max(6, len(num_cols) - 1)))
-    corr = df[num_cols].corr()
-    mask = np.triu(np.ones_like(corr, dtype=bool))
-    sns.heatmap(
-        corr, mask=mask, annot=True, fmt=".2f",
-        cmap="coolwarm", vmin=-1, vmax=1, linewidths=0.5,
-    )
-    plt.title("Numeric Feature Correlation Matrix", fontsize=14,
-              fontweight="bold")
+    train[config.NUMERIC_COLS].hist(figsize=(16, 14), bins=30)
     plt.tight_layout()
-    plt.savefig(os.path.join(config.PLOT_DIR, "03_correlation_heatmap.png"),
-                dpi=150, bbox_inches="tight")
+    plt.savefig(config.PLOT_DIR / "02_training_features.png", dpi=150)
     plt.close()
-    print("  Plot saved → 03_correlation_heatmap.png")
+    print(f"Reserved {len(test)} holdout rows; {len(train)} training rows. No preprocessing fitted.", flush=True)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. IMPUTE MISSING VALUES
-# ─────────────────────────────────────────────────────────────────────────────
-if num_cols:
-    num_imputer = SimpleImputer(strategy="median")
-    df[num_cols] = num_imputer.fit_transform(df[num_cols])
-    joblib.dump(num_imputer, os.path.join(config.MODEL_DIR, "num_imputer.pkl"))
 
-if cat_cols:
-    cat_imputer = SimpleImputer(strategy="most_frequent")
-    df[cat_cols] = cat_imputer.fit_transform(df[cat_cols])
-    joblib.dump(cat_imputer, os.path.join(config.MODEL_DIR, "cat_imputer.pkl"))
-
-print("\n  ✔ Missing values imputed.")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 8. OUTLIER CLIPPING (IQR × 3 — robust fence)
-# ─────────────────────────────────────────────────────────────────────────────
-for col in num_cols:
-    Q1, Q3 = df[col].quantile(0.25), df[col].quantile(0.75)
-    IQR = Q3 - Q1
-    lo, hi = Q1 - 3 * IQR, Q3 + 3 * IQR
-    n_clipped = ((df[col] < lo) | (df[col] > hi)).sum()
-    df[col] = df[col].clip(lo, hi)
-    if n_clipped:
-        print(f"  Clipped {n_clipped} outliers in '{col}'")
-
-print("  ✔ Outlier clipping complete.")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 9. ENCODE TARGET LABEL
-# ─────────────────────────────────────────────────────────────────────────────
-le_target = LabelEncoder()
-df["label"] = le_target.fit_transform(df[config.TARGET_COL])
-joblib.dump(le_target, os.path.join(config.MODEL_DIR, "label_encoder.pkl"))
-class_map = dict(zip(le_target.classes_,
-                     le_target.transform(le_target.classes_)))
-print(f"\n  Target encoding: {class_map}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 10. ONE-HOT ENCODE CATEGORICALS
-# ─────────────────────────────────────────────────────────────────────────────
-df_encoded = pd.get_dummies(df, columns=cat_cols, drop_first=False)
-print(f"\n  Shape after OHE: {df_encoded.shape}")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 11. STANDARD SCALE NUMERICS
-# ─────────────────────────────────────────────────────────────────────────────
-scaler = StandardScaler()
-df_encoded[num_cols] = scaler.fit_transform(df_encoded[num_cols])
-joblib.dump(scaler, os.path.join(config.MODEL_DIR, "scaler.pkl"))
-print("  ✔ Standard scaling applied.")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 12. SAVE PREPROCESSED DATA & METADATA
-# ─────────────────────────────────────────────────────────────────────────────
-out_path = os.path.join(config.OUTPUT_DIR, "preprocessed_data.csv")
-df_encoded.to_csv(out_path, index=False)
-
-feature_cols = [
-    c for c in df_encoded.columns
-    if c not in [config.TARGET_COL, "label"]
-]
-joblib.dump(feature_cols, os.path.join(config.MODEL_DIR, "feature_cols.pkl"))
-joblib.dump(num_cols,     os.path.join(config.MODEL_DIR, "num_cols.pkl"))
-joblib.dump(cat_cols,     os.path.join(config.MODEL_DIR, "cat_cols.pkl"))
-
-print(f"\n✔ Preprocessed data saved  →  {out_path}")
-print(f"  Features after encoding: {len(feature_cols)}")
-print("\n✔ STEP 1 COMPLETE\n")
+if __name__ == "__main__":
+    main()

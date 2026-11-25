@@ -1,176 +1,77 @@
-# 🚚 Amazon Supply Chain Intelligence
-## Delivery Delay Risk Predictor — ML Pipeline
+# Logistics Risk Classification
 
----
+An educational machine learning experiment that predicts the supplied **High Risk**, **Low Risk**, and **Moderate Risk** labels from operational logistics measurements. It compares Logistic Regression and Random Forest with a majority-class baseline using a reproducible, leakage-safe workflow.
 
-## 📌 Project Overview
+This is an independent student project. No Amazon affiliation, real-world deployment, or observed delivery-delay prediction is claimed.
 
-This project is built for **Amazon Supply Chain Intelligence**, an AI-driven
-logistics division aiming to predict delivery delay risk for every e-commerce
-order before it ships.
+## Dataset and scope
 
-Using historical logistics data — including GPS coordinates, fuel consumption,
-ETA variation, traffic congestion, weather severity, driver behaviour scores,
-delay probability, and 18 other numeric signals — the system trains a
-**multi-class classifier** to categorise each delivery into one of three
-risk tiers:
+The included `data/dynamic_supply_chain_logistics_dataset.csv` contains 32,065 rows and 26 columns, with timestamps from January 2021 through August 2024. The target counts are High Risk: 23,944; Moderate Risk: 5,011; Low Risk: 3,110.
 
-| Class | Meaning |
-|-------|---------|
-| ✅ **On-Time** | Delivery expected within the promised window |
-| ⚠️ **At Risk** | Delivery may be marginally delayed (moderate risk) |
-| ❌ **Delayed** | High probability of significant customer-impacting delay |
+Source: [DatasetEngineer, Logistics and supply chain dataset (Kaggle)](https://www.kaggle.com/datasets/datasetengineer/logistics-and-supply-chain-dataset), listed as CC0: Public Domain. The public download was verified on 2026-11-25 as a byte-for-byte match to this CSV. See `DATASET.md` for the hash, source definitions and limitations. The original acquisition date, label-generation code and real/synthetic status are unverified. Do not represent the data as Amazon observations or independently authenticated real-world records.
 
----
+The supplied labels exactly match thresholds of `disruption_likelihood_score` across all rows: below 0.3 is Low Risk, 0.3 to below 0.7 is Moderate Risk, and 0.7 or above is High Risk. A classifier using that score would simply reconstruct the label rule. It is excluded, together with actual `delivery_time_deviation` and the undocumented precomputed scores `delay_probability` and `route_risk_level`. The latter two are excluded conservatively; they have not been established as deterministic encodings of the target.
 
-## 🤖 Models Trained
+The source defines `eta_variation_hours` using actual arrival time and `order_fulfillment_status` using whether fulfillment was on time. These outcome inputs are also excluded. The experiment uses a strict allowlist of 18 operational inputs from `config.py`, including GPS, traffic, warehouse stock, weather, shipping costs, driver scores, and cargo sensors. Their measurement times still require verification. This is a classification experiment at an unspecified operational checkpoint; several inputs may not exist before shipment. Risk categories must not be renamed as observed On-Time/Delayed outcomes.
 
-| # | Model | Role |
-|---|-------|------|
-| 1 | **Logistic Regression** | Linear baseline — fast, interpretable, used for coefficient analysis |
-| 2 | **Random Forest** | Primary model — 500-tree bagging ensemble, tuned via RandomizedSearchCV |
+## Run
 
-Both models are evaluated head-to-head on the same held-out test set.
-The best performing model is automatically saved as `best_model.pkl`.
+Use Python 3.11 or newer. The pinned environment was verified with Python 3.14.2 on Windows; other Python/platform combinations have not been tested.
 
----
-
-## 🏗️ Pipeline Architecture
-
-```
-Raw CSV Dataset
-      │
-      ▼
-┌─────────────────────────────────────────┐
-│  Step 1 — EDA & Preprocessing           │
-│  • Type detection & missing imputation  │
-│  • 3×IQR outlier clipping               │
-│  • Standard Scaling (24 numeric cols)   │
-│  • Label Encoding on target column      │
-│  • Saves: preprocessed_data.csv         │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│  Step 2 — Feature Engineering           │
-│  • Interaction features (risk signals)  │
-│  • Polynomial features (x², √x)         │
-│  • Composite Risk Score                 │
-│  • Log transforms on skewed columns     │
-│  • Saves: engineered_data.csv           │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│  Step 3 — Model Training                │
-│  • SMOTE balances class imbalance       │
-│  • Logistic Regression (CV baseline)   │
-│  • Random Forest (RandomizedSearchCV)  │
-│  • Best model auto-selected & saved     │
-└────────────────────┬────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────┐
-│  Step 4 — Evaluation & Report           │
-│  • Accuracy, F1, ROC-AUC both models   │
-│  • Side-by-side confusion matrices     │
-│  • ROC & Precision-Recall curves       │
-│  • RF importances + LR coefficients    │
-│  • Full text report saved               │
-└─────────────────────────────────────────┘
-```
-
----
-
-## 📁 Project Structure
-
-```
-amazon_supply_chain_ml/
-│
-├── data/
-│   └── dynamic_supply_chain_logistics_dataset.csv   ← YOUR DATA HERE
-│
-├── outputs/                                          ← auto-created on run
-│   ├── models/          ← .pkl artefacts
-│   ├── plots/           ← all 10 charts (PNG)
-│   └── reports/         ← text report + model comparison CSV
-│
-├── config.py                    ← central config — edit column names here
-├── step1_eda_preprocessing.py
-├── step2_feature_engineering.py
-├── step3_train_models.py        ← Logistic Regression + Random Forest
-├── step4_evaluate_report.py     ← evaluation of both models
-├── main_pipeline.py             ← single entry point
-├── requirements.txt
-├── README.md
-└── STEP_BY_STEP_GUIDE.md
-```
-
----
-
-## ⚙️ Key Techniques
-
-| Technique | Purpose |
-|-----------|---------|
-| **SMOTE** | Balances the 23k vs 3k vs 5k class imbalance before training |
-| **RandomizedSearchCV** | Tunes Random Forest hyperparameters (20 combos × 5 folds) |
-| **StratifiedKFold** | Preserves class ratios in every CV fold |
-| **Feature Engineering** | 15+ derived features (interactions, polynomials, risk scores) |
-| **3×IQR Clipping** | Robust outlier handling for sensor/GPS data |
-| **StandardScaler** | Normalises all 24 numeric features |
-
----
-
-## 📊 Output Files
-
-| File | Description |
-|------|-------------|
-| `plots/01_target_distribution.png` | Class balance bar + pie |
-| `plots/02_numeric_distributions.png` | Histograms & boxplots |
-| `plots/03_correlation_heatmap.png` | Feature correlation matrix |
-| `plots/04_feature_correlation_ranking.png` | Top features by target correlation |
-| `plots/05_model_comparison.png` | LR vs RF — all metrics side-by-side |
-| `plots/06_confusion_matrix.png` | Confusion matrices for both models |
-| `plots/07_roc_curves.png` | ROC curves — both models on same chart |
-| `plots/08_precision_recall_curves.png` | PR curves — both models |
-| `plots/09_feature_importances.png` | RF importances + LR coefficients |
-| `plots/10_confidence_distribution.png` | Prediction confidence histograms |
-| `reports/final_evaluation_report.txt` | Complete metrics text report |
-| `reports/model_comparison.csv` | Head-to-head accuracy table |
-| `models/best_model.pkl` | Best model ready for inference |
-
----
-
-## 🚀 Quick Start
-
-```bash
-# 1. Install dependencies (Python 3.9+)
-pip install -r requirements.txt
-
-# 2. Place your dataset
-cp /path/to/dataset.csv data/dynamic_supply_chain_logistics_dataset.csv
-
-# 3. Run the full pipeline
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m unittest discover -s tests -v
 python main_pipeline.py
 ```
 
----
+On Linux/macOS, activate with `source .venv/bin/activate`. The experiment uses one worker and 100-tree forests to limit resource use. Runtime depends on the machine; progress is printed for each candidate. All outputs are written relative to the repository, regardless of your current working directory.
 
-## ⚙️ Configuration
+## Method
 
-Open `config.py` to adjust:
+1. Validate required inputs and labels, remove exact duplicate records, reject repeated operational inputs that could cross partitions, and reserve a stratified 20% random holdout with seed 42. Development feature summaries use training rows only.
+2. Compare three fixed-parameter pipelines with the same shuffled five-fold stratified CV on the remaining 80%. Each fold independently fits median imputation, 3-IQR clipping, seven raw-unit engineered features, and standard scaling. SMOTE with three neighbors runs only inside each training fold for the learned models. The majority baseline uses no SMOTE.
+3. Select the highest **mean CV macro F1**, including the baseline as an eligible winner, then refit every candidate on all training rows. Logistic Regression uses `lbfgs`, `C=1`, and 2,000 maximum iterations. Random Forest uses 100 trees, depth 12, and a minimum leaf size of 10. There is no hyperparameter search and no fabricated CV statistic.
+4. Evaluate the frozen candidates on the untouched holdout, without changing the selected winner. Report accuracy, macro/weighted F1, balanced accuracy, macro OvR ROC-AUC, per-class precision/recall/F1, confusion matrices, and ROC/precision-recall curves. Probability columns follow the saved classifier's class order.
 
-```python
-TARGET_COL   = "risk_classification"   # your target column name
-NUMERIC_COLS = [...]                   # your 24 feature column names
-TEST_SIZE    = 0.20                    # train/test split
-CV_FOLDS     = 5                       # cross-validation folds
+The seven engineered features are driver score multiplied by fatigue, port congestion multiplied by customs time, two ratios with `1 + abs(denominator)`, and signed `log1p(abs(x))` transforms of costs, demand, and lead time. Engineering happens before scaling and uses no batch-dependent minimum. Saved pipelines include every fitted inference transform.
+
+## Files and outputs
+
+| File | Purpose |
+| --- | --- |
+| `config.py` | Feature allowlist, excluded columns, split and CV settings |
+| `ml_pipeline.py` | Input validation and reusable fitted pipeline components |
+| `step1_eda_preprocessing.py` | Raw-data audit, holdout reservation, training-only EDA |
+| `step2_feature_engineering.py` | Feature schema preview; no model-training data transformation |
+| `step3_train_models.py` | Training-only CV, selection, refitting and saved pipelines |
+| `step4_evaluate_report.py` | Holdout metrics, reports and plots |
+| `main_pipeline.py` | Runs all four steps in order, stopping on errors |
+| `predict.py` | Predicts from a new raw CSV |
+| `tests/test_pipeline.py` | Leakage, schema, edge-case and serialization regression checks |
+
+Generated files in `outputs/` are ignored by Git. `results/` contains the text/CSV/JSON report snapshot from the verified final run so reviewers can inspect measured evidence without retraining:
+
+- `outputs/models/`: each complete pipeline, `best_model.pkl`, and its selected name.
+- `outputs/reports/`: data audit (including dataset SHA-256), feature schema, training statistics, per-fold and aggregate CV results, actual holdout metrics, per-class reports, feature importance, environment/parameter metadata, and `final_evaluation_report.txt`.
+- `outputs/plots/`: training class/feature distributions, metric comparison, confusion matrices, ROC/PR curves, and descriptive Random Forest importance.
+- `outputs/data_split.pkl`: raw training/holdout inputs, labels and row identifiers for this run.
+
+Run the full pipeline after changing data, settings or source code. Do not mix artifacts from different runs. Include the generated report and relevant figures in your submission package; they are regenerated locally rather than stored as large binaries in Git. A raw-input prediction example is:
+
+```powershell
+python predict.py new_shipments.csv --output outputs/predictions.csv
 ```
 
----
+The CSV must contain all 18 operational columns. Target, timestamp, and excluded columns are unnecessary and ignored if present. Missing cells are imputed using training medians; missing columns, nonnumeric values and infinities fail clearly. The output contains one prediction and class probabilities per input row in the original order. Probabilities are **uncalibrated model scores**, especially after SMOTE, rather than established delivery-event probabilities. Only load pickle/joblib artifacts you trust.
 
-## 👤 Project Context
+## Interpretation and submission limitations
 
-**Division**: Amazon Supply Chain Intelligence  
-**Goal**: Proactive delivery risk detection to improve customer satisfaction  
-**Built with**: Python · Scikit-learn · imbalanced-learn · Matplotlib · Seaborn
+The random split estimates performance on similar rows from the same distribution. It does not establish future forecasting, unseen-vehicle generalization, or robustness to time drift. A prospective application needs a chronological split and entity grouping once identifiers and measurement times are documented.
+
+The holdout was inspected during repository repair before the final source-based exclusion of ETA variation and fulfillment status. The final run keeps selection inside training CV, but its reported holdout scores are exploratory development evidence. A fresh external evaluation is required for an unbiased final-performance claim.
+
+Report the measured baseline and minority-class recall alongside accuracy. A dominant-class prediction alone has substantial accuracy on this dataset. Low performance after removing label proxies is a valid finding; do not restore leaking features or invent accuracy targets to improve the headline. Random Forest impurity importance is descriptive, can be biased, and is not evidence of causality. Confidence histograms are not calibration tests.
+
+See `STEP_BY_STEP_GUIDE.md` for the submission checklist and troubleshooting. Remaining source-authenticity, measurement-timing and institution-specific requirements must be addressed by the student.

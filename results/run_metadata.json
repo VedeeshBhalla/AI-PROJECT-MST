@@ -1,0 +1,61 @@
+{
+  "selected_model": "Random_Forest",
+  "selection_metric": "training CV macro F1",
+  "cv_folds": 5,
+  "random_state": 42,
+  "hyperparameter_search": false,
+  "python": "3.14.2",
+  "versions": {
+    "numpy": "2.4.1",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.8.0",
+    "imbalanced-learn": "0.14.1",
+    "joblib": "1.5.3",
+    "scipy": "1.17.0",
+    "matplotlib": "3.10.8"
+  },
+  "parameters": {
+    "Majority_Baseline": {
+      "constant": null,
+      "random_state": null,
+      "strategy": "most_frequent"
+    },
+    "Logistic_Regression": {
+      "C": 1.0,
+      "class_weight": null,
+      "dual": false,
+      "fit_intercept": true,
+      "intercept_scaling": 1,
+      "l1_ratio": 0.0,
+      "max_iter": 2000,
+      "n_jobs": null,
+      "penalty": "deprecated",
+      "random_state": 42,
+      "solver": "lbfgs",
+      "tol": 0.0001,
+      "verbose": 0,
+      "warm_start": false
+    },
+    "Random_Forest": {
+      "bootstrap": true,
+      "ccp_alpha": 0.0,
+      "class_weight": null,
+      "criterion": "gini",
+      "max_depth": 12,
+      "max_features": "sqrt",
+      "max_leaf_nodes": null,
+      "max_samples": null,
+      "min_impurity_decrease": 0.0,
+      "min_samples_leaf": 10,
+      "min_samples_split": 2,
+      "min_weight_fraction_leaf": 0.0,
+      "monotonic_cst": null,
+      "n_estimators": 100,
+      "n_jobs": 1,
+      "oob_score": false,
+      "random_state": 42,
+      "verbose": 0,
+      "warm_start": false
+    }
+  }
+}
