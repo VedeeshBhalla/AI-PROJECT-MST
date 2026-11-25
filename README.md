@@ -75,3 +75,10 @@ The holdout was inspected during repository repair before the final source-based
 Report the measured baseline and minority-class recall alongside accuracy. A dominant-class prediction alone has substantial accuracy on this dataset. Low performance after removing label proxies is a valid finding; do not restore leaking features or invent accuracy targets to improve the headline. Random Forest impurity importance is descriptive, can be biased, and is not evidence of causality. Confidence histograms are not calibration tests.
 
 See `STEP_BY_STEP_GUIDE.md` for the submission checklist and troubleshooting. Remaining source-authenticity, measurement-timing and institution-specific requirements must be addressed by the student.
+
+## Presentation and project report
+
+- [PowerPoint presentation](submission/deliverables/Logistics_Risk_Classification_Canva_Theme_Final.pptx): 22 slides, styled from the supplied Canva template preview, covering motivation, inputs, training, validation, execution and measured results.
+- [Project report](submission/deliverables/Logistics_Risk_Classification_Project_Report.pdf): 20 pages with five chapters covering introduction, literature survey, research gap and objectives, methodology, and results and graphs. The guide and college fields are fillable.
+
+Both deliverables include Vedeesh Bhalla (1024030999) and Udayan Mahalwar (1024031088). They describe the corrected experiment and its weak predictive performance. Local build scripts, previews and temporary files are excluded from Git.
